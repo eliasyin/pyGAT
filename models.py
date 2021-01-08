@@ -17,7 +17,7 @@ class GAT(nn.Module):
         self.out_att = GraphAttentionLayer(nhid * nheads, nclass, dropout=dropout, alpha=alpha, concat=False)
 
     def forward(self, x, adj):
-        x = F.dropout(x, self.dropout, training=self.training)
+        x = F.dropout(x, self.dropout, training=self.training)   # 将x中的值随机置零。 一种增强鲁棒性的方法
         x = torch.cat([att(x, adj) for att in self.attentions], dim=1)
         x = F.dropout(x, self.dropout, training=self.training)
         x = F.elu(self.out_att(x, adj))

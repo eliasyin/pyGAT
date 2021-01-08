@@ -7,6 +7,9 @@ import torch.nn.functional as F
 class GraphAttentionLayer(nn.Module):
     """
     Simple GAT layer, similar to https://arxiv.org/abs/1710.10903
+    简单来说，就是先计算出一个权重矩阵 Wh.shape: (N, out_features)
+    然后根据这个权重矩阵构造出attention_weight，这个构造的过程就是不断改变Wh的形状的过程，
+    将改造后得到的attention_weight归一化就是attention weight
     """
     def __init__(self, in_features, out_features, dropout, alpha, concat=True):
         super(GraphAttentionLayer, self).__init__()
@@ -17,7 +20,7 @@ class GraphAttentionLayer(nn.Module):
         self.concat = concat
 
         self.W = nn.Parameter(torch.empty(size=(in_features, out_features)))
-        nn.init.xavier_uniform_(self.W.data, gain=1.414)
+        nn.init.xavier_uniform_(self.W.data, gain=1.414) # 初始化参数，这里选择均匀分布
         self.a = nn.Parameter(torch.empty(size=(2*out_features, 1)))
         nn.init.xavier_uniform_(self.a.data, gain=1.414)
 
@@ -26,12 +29,12 @@ class GraphAttentionLayer(nn.Module):
     def forward(self, h, adj):
         Wh = torch.mm(h, self.W) # h.shape: (N, in_features), Wh.shape: (N, out_features)
         a_input = self._prepare_attentional_mechanism_input(Wh)
-        e = self.leakyrelu(torch.matmul(a_input, self.a).squeeze(2))
-
-        zero_vec = -9e15*torch.ones_like(e)
-        attention = torch.where(adj > 0, e, zero_vec)
+        e = self.leakyrelu(torch.matmul(a_input, self.a).squeeze(2))  # torch.matmul(a_input, self.a) : (N, N, 1)
+        # a_input的第三个维度就是计算后的hidden_output, 上边这一步将hidden_output,压缩为1个值
+        zero_vec = -9e15*torch.ones_like(e)  # (N, N)
+        attention = torch.where(adj > 0, e, zero_vec) # 合并两个tensor adj>0 保存e，否则保存zero_vec  attention : (N, N)
         attention = F.softmax(attention, dim=1)
-        attention = F.dropout(attention, self.dropout, training=self.training)
+        attention = F.dropout(attention, self.dropout, training=self.training) # 将attention的权重随机置零。 一种增强鲁棒性的方法
         h_prime = torch.matmul(attention, Wh)
 
         if self.concat:
@@ -53,8 +56,8 @@ class GraphAttentionLayer(nn.Module):
         # '----------------------------------------------------' -> N times
         # 
         
-        Wh_repeated_in_chunks = Wh.repeat_interleave(N, dim=0)
-        Wh_repeated_alternating = Wh.repeat(N, 1)
+        Wh_repeated_in_chunks = Wh.repeat_interleave(N, dim=0)  # (N * N, out_features)
+        Wh_repeated_alternating = Wh.repeat(N, 1)  # (N * N, out_features)
         # Wh_repeated_in_chunks.shape == Wh_repeated_alternating.shape == (N * N, out_features)
 
         # The all_combination_matrix, created below, will look like this (|| denotes concatenation):
